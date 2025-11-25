@@ -3,10 +3,11 @@
 ; part 3
 
 extern printf			; the C function, to be called
-extern scanf            ; the C function, to be called
-extern srand            ; the C function, to be called ; lab requires user input therefore we can use srand instead
-extern rand             ; the C function, to be called
-extern malloc           ; the C function, to be called
+extern scanf            ; use the C language format - ...scanf("%d")
+extern srand            ; use the C language format to set rand - srand(usigned int value) ~ srand(seed_value)
+extern rand             ; use the C language format - once srand sets seed value, can simply be used as rand()
+extern malloc           ; use the C language format - malloc(size of array * bytes per elements) 
+extern free             ; use the C language format - free(pointer to free) 
 global main				; the standard gcc entry point
     
     %define ARRAY_SIZE 9 ; macro for array size ; only use if input read is less than or equal to zero
@@ -21,12 +22,13 @@ global main				; the standard gcc entry point
 
 section .bss			; BSS, uninitialized identifiers
     
-    array_size: resd 1 ; reserve 4-bytes for array_size
-    seed_value: resd 1 ; reserve 4-bytes for seed_value
-    mod_value:  resd 1 ; reserve 4-bytes for mod_value
-    array: resd ARRAY_SIZE ; uninitialized array of 9 4-byte values
+    array_size: resd 1      ; reserve 4-bytes for array_size
+    seed_value: resd 1      ; reserve 4-bytes for seed_value
+    mod_value:  resd 1      ; reserve 4-bytes for mod_value
 
 section .data			; Data section, initialized identifiers
+    
+    array_ptr: dd 0x0       ; allocate and initialize to NULL (0x0)
 
 section .rodata         ; Read-only section, immutable identifiers
     
@@ -70,16 +72,12 @@ read_data:
         push dword read_int_fmt                 ; push scanf format onto stack ; format must be in C language
         call scanf                              ; calls scanf and reads in value
         add esp, 8                              ; clean stack from previous 2 calls
-        push NL_fmt                             ; push newline format onto stack
-        call printf                             ; calls printf and prints newline
-        add esp, 4                              ; clean stack from previous call
 
         mov eax, [ array_size ]                 ; move the value of 'array_size' into eax
         cmp eax, NULL                           ; compare eax and NULL (zero) 
         jg .seed_value                          ; if eax (array_size) greater than NULL (zero) jump to next section (.seed_value)
         mov dword [ array_size ], ARRAY_SIZE    ; else set the value of 'array_size' to the macro ARRAY_SIZE
                                         
-                 ; follow the same process for seed and modulo value
     .seed_value:
         push dword seed_prompt_fmt
         call printf
@@ -88,14 +86,11 @@ read_data:
         push dword read_int_fmt
         call scanf
         add esp, 8
-        push NL_fmt
-        call printf
-        add esp, 4
-        
+                                                ; The following sets up rand by setting a constant seed using srand 
         mov eax, [ seed_value ]
         cmp eax, NULL
-        jg .mod_value
-        mov dword [ seed_value ], SEED_DEFAULT
+        jg .mod_value                           ;; else clause 
+        mov dword [ seed_value ], SEED_DEFAULT  ; set the value of seed value to the default seed value
 
    .mod_value:
         push dword mod_prompt_fmt
@@ -105,56 +100,74 @@ read_data:
         push dword read_int_fmt
         call scanf
         add esp, 8
-        push NL_fmt
-        call printf
-        add esp, 4
 
         mov eax, [ mod_value ]
         cmp eax, NULL
-        jg .done
+        jg malloc_array
         mov dword [ mod_value ], MOD_DEFAULT
 
-        .done:
+malloc_array:
+    mov eax, array_size
+    imul eax, ELEMENT_SIZE
+    push eax
+    call malloc
+    mov [ array_ptr ], eax
+    add esp, 4
 
-;; use code below for testing purposes
-mov eax, [ array_size ]
-mov ebx, [ seed_value ]
-mov edx, [ mod_value ]
-    .print_test:
-        push edx
-        push ebx
-        push eax
-        push dword test_fmt
-        call printf
-        add esp, 16
-;; use code above for testing purposes
+set_seed:
+    mov eax, [ seed_value ]
+    push eax
+    call srand
+    add esp, 4
 
-;mov ebx, array          ; move the address of array into ebx register
-;mov edi, 0              ; set edi (destination index) to zero ; will be used to increment the array index
-;mov eax, -200           ; set eax to the intital value - which is '-200'
-;mov ecx, ARRAY_SIZE     ; set the counter register, ecx, to the array size (23) ; using the reserved word 'loop' will decrement ecx
-;
-;assign_array:
-;   mov dword [ ebx + edi * ELEMENT_SIZE ], eax  ; equivalent to example in arrays  ; '*' binds tighter than '+'
-;   sub eax, 3                                   ; decrement eax by 4
-;   inc edi                                      ; increment edi ; this is moving through the array indices
-;   loop assign_array                            ; jumps back to the the 'assign_array' label unti ecx is zero - this is our looping command
-;
-;mov edi, LAST_INDEX                             ; set edi to LAST_INDEX (22) ; iterates through array indices and print backwards ; from 22 -> 0
-;mov eax, [ ebx + edi * ELEMENT_SIZE ]           ; 
-;mov ecx, ARRAY_SIZE                             ; reset ecx to ARRAY_SIZE (23); used to print index numeric labels ; printing index sting labels backwards
-;print_array:
-;    push ecx                                ; printf uses ecx so we need to push ecx onto stack to store the value of ecx
-;                                            ; if using another register instead ecx, I think push/pop ecx can be avoided
-;    push eax                                ; pushing for value string
-;    push edi                                ; pushing for index string
-;    push dword array_fmt                          ; pushing string format
-;    call printf
-;    add esp, 12                             ; cleaning up stack from the 3 push calls 
-;    pop ecx                                 ; IMPORTANT: need to pop ecx because printf used ecx
-;    dec edi                                 ; decrmenting edi ; this is our index value
-;    mov eax, [ ebx + edi * ELEMENT_SIZE ]   ; placing the value referenced at index array address into eax
-;    loop print_array                        ; jumps back to the 'print_array' label until ecx is zero 
+mov ebx, [ array_ptr ]
+mov edi, 0
+mov ecx, [ array_size ]
+assign_array:
+    push ecx
+    call rand
+    idiv dword [ mod_value ]
+    mov dword [ ebx + edi * ELEMENT_SIZE ], edx
+    pop ecx
+    inc edi
+    loop assign_array
+
+
+push dword output_fmt1
+call printf
+add esp, 4
+mov edi, 0
+mov eax, [ ebx ]
+mov ecx, [ array_size ]
+print_array:
+    push ecx
+    push eax
+    push dword output_fmt2
+    call printf
+    add esp, 8
+    pop ecx
+    inc edi
+    mov eax, [ ebx + edi * ELEMENT_SIZE ]
+    loop print_array
+
+free_memory:
+    push dword [ array_ptr ]
+    call free
+    add esp, 4
+    
+
+;;; use code below for testing purposes
+;mov eax, [ array_size ]
+;mov ebx, [ seed_value ]
+;mov edx, [ mod_value ]
+;    .print_test:
+;        push edx
+;        push ebx
+;        push eax
+;        push dword test_fmt
+;        call printf
+;        add esp, 16
+;;; use code above for testing purposes
 
 	; Don't change or remove the lines of code in here  |
 	mov	esp, ebp		    ; takedown stack frame		|
